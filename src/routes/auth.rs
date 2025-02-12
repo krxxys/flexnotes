@@ -1,14 +1,18 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    cell::Ref,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use axum::{extract::State, Json};
 use bcrypt::{verify, DEFAULT_COST};
-use jsonwebtoken::{encode, Algorithm, Header};
-use mongodb::bson::{doc, oid::ObjectId};
+use jsonwebtoken::{decode, encode, Algorithm, Header, Validation};
+use mongodb::bson::{doc, oid::ObjectId, DateTime};
 use serde::{Deserialize, Serialize};
+use sled::Db;
 
 use crate::{
-    auth::{AuthError, AuthResponseBody, Claims},
-    models::DB,
+    auth::{generate_acces_token, generate_refresh_token, AuthError, AuthResponseBody, Claims},
+    models::{self, DB},
     UserInfo, KEYS,
 };
 
@@ -25,45 +29,23 @@ pub async fn authorize(
     if payload.username.is_empty() || payload.password.is_empty() {
         return Err(AuthError::MissingCredentials);
     }
-    let filter = doc! {"username": payload.username};
-    let result = db
-        .users
-        .find_one(filter)
-        .await
-        .map_err(|_| AuthError::WrongCredentials)?;
 
-    println!("{:?}", result);
-    match result {
-        Some(data) => {
-            match verify(payload.password, &data.password) {
-                Ok(true) => {
-                    let claims = Claims {
-                        email: data.email,
-                        company: "TEST".to_owned(),
-                        exp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as usize + 2 * 60 * 60,
-                    };
-    
-                    let token = encode(&Header::new(Algorithm::HS256), &claims, &KEYS.encoding)
-                        .map_err(|_err| return AuthError::TokenCreation)?;
-    
-                    return Ok(Json(AuthResponseBody::new(token, data.username)))
-                },
-                Ok(false) => {
-                    return Err(AuthError::WrongCredentials)
-                }
-                Err(err) => {
-                    println!("Error: {}", err);
-                    return Err(AuthError::InternalServerError)
-                },
-            }
+    let user = db.get_user(&payload.username).await?;
+
+    match verify(payload.password, &user.password) {
+        Ok(true) => {
+            let token = generate_acces_token(&user.email)?;
+            let refresh_token = generate_refresh_token(&user.email)?;
+            Ok(Json(AuthResponseBody::new(
+                token,
+                refresh_token,
+                user.username,
+            )))
         }
-        None => {
-            return Err(AuthError::WrongCredentials)
-        }, 
-}}
-
-
-
+        Ok(false) => Err(AuthError::WrongCredentials),
+        Err(_) => Err(AuthError::InternalServerError),
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RegisterPayload {
@@ -79,39 +61,55 @@ pub async fn register(
     if payload.username.is_empty() || payload.email.is_empty() || payload.password.is_empty() {
         return Err(AuthError::MissingCredentials);
     }
-    //check if user with this username or email exists
-    if let Some(_user_exist) = db
-        .users
-        .find_one(doc! {"$or": [{"username": &payload.username}, {"email": &payload.email}]})
-        .await
-        .unwrap()
-    {
-        Err(AuthError::UserAlreadyExists)
-    } else {
-        let new_user = UserInfo {
-            id: ObjectId::new(),
-            username: payload.username.clone(),
-            email: payload.email.clone(),
-            password: bcrypt::hash(payload.password, DEFAULT_COST).map_err(|_| return AuthError::TokenCreation)?,
-        };
 
-        match db.users.insert_one(new_user).await {
-            Ok(_result) => {
-                let claims = Claims {
-                    email: payload.email,
-                    company: "flexnote".to_owned(),
-                    exp: 2000000000,
-                };
+    if !db.user_exist(&payload.username, &payload.email).await? {
+        let user = db
+            .create_user(&payload.username, &payload.email, &payload.password)
+            .await?;
+    }
 
-                let token = encode(&Header::new(Algorithm::HS256), &claims, &KEYS.encoding)
-                    .map_err(|_err| AuthError::TokenCreation)?;
+    let token = generate_acces_token(&payload.email)?;
+    let refresh_token = generate_refresh_token(&payload.email)?;
+    Ok(Json(AuthResponseBody::new(
+        token,
+        refresh_token,
+        payload.username,
+    )))
+}
 
-                Ok(Json(AuthResponseBody::new(token, payload.username)))
+#[derive(Serialize, Deserialize)]
+pub struct RefreshRequest {
+    pub refresh_token: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RefreshResponse {
+    pub acces_token: String,
+    pub refresh_token: String,
+}
+
+pub async fn refresh_token(
+    Json(payload): Json<RefreshRequest>,
+) -> Result<Json<RefreshResponse>, AuthError> {
+    let refresh_token = payload.refresh_token;
+    match decode::<Claims>(
+        &refresh_token,
+        &KEYS.decoding,
+        &Validation::new(Algorithm::HS256),
+    ) {
+        Ok(token_data) => {
+            if token_data.claims.exp < DateTime::now().timestamp_millis() as usize {
+                return Err(AuthError::InvalidToken);
             }
-            Err(insert_error) => {
-                eprintln!("{:?}", insert_error);
-                Err(AuthError::TokenCreation)
-            }
+
+            let new_acces_token = generate_acces_token(&token_data.claims.email)?;
+            let new_refresh_token = generate_refresh_token(&token_data.claims.email)?;
+
+            Ok(Json(RefreshResponse {
+                acces_token: new_acces_token,
+                refresh_token: new_refresh_token,
+            }))
         }
+        Err(_) => Err(AuthError::InvalidToken),
     }
 }

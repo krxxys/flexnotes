@@ -1,12 +1,16 @@
 use std::sync::Arc;
 
 use axum::{http::StatusCode, response::IntoResponse, Json};
+use bcrypt::DEFAULT_COST;
 use mongodb::{
     bson::{doc, oid::ObjectId},
     Collection,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tracing_subscriber::registry::Data;
+
+use crate::auth::{Auth, AuthError};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct UserInfo {
@@ -30,8 +34,8 @@ pub struct NoteInfo {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum NotesError {
     DbError,
-    NoteNotFound, 
-    AuthorNotFound
+    NoteNotFound,
+    AuthorNotFound,
 }
 
 impl IntoResponse for NotesError {
@@ -52,16 +56,6 @@ impl IntoResponse for NotesError {
     }
 }
 
-impl DatabaseModel {
-    pub async fn get_user(&self, email: String) -> Option<UserInfo> {
-        self.users
-            .find_one(doc! {"email": email})
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
-            .unwrap()
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct DatabaseModel {
     pub notes: Collection<NoteInfo>,
@@ -69,3 +63,47 @@ pub struct DatabaseModel {
 }
 
 pub type DB = Arc<DatabaseModel>;
+
+impl DatabaseModel {
+    pub async fn get_user(&self, username: &str) -> Result<UserInfo, AuthError> {
+        let filter = doc! {"username": username};
+        match self
+            .users
+            .find_one(filter)
+            .await
+            .map_err(|_| AuthError::WrongCredentials)?
+        {
+            Some(user) => Ok(user),
+            None => Err(AuthError::WrongCredentials),
+        }
+    }
+
+    pub async fn user_exist(&self, username: &str, email: &str) -> Result<bool, AuthError> {
+        match self
+            .users
+            .find_one(doc! {"$or": [{"username": username}, {"email": email}]})
+            .await
+        {
+            Ok(Some(_)) => Ok(true),
+            Ok(None) => Ok(false),
+            Err(_) => Err(AuthError::InternalServerError),
+        }
+    }
+
+    pub async fn create_user(
+        &self,
+        username: &str,
+        email: &str,
+        password: &str,
+    ) -> Result<UserInfo, AuthError> {
+        let new_user = UserInfo {
+            id: ObjectId::new(),
+            username: username.to_string(),
+            email: email.to_string(),
+            password: bcrypt::hash(password, DEFAULT_COST)
+                .map_err(|_| AuthError::InternalServerError)?,
+        };
+
+        Ok(new_user)
+    }
+}

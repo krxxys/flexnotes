@@ -4,20 +4,23 @@ use axum::{
     http::{Request, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
-    Json, RequestPartsExt,
+    Extension, Json, RequestPartsExt,
 };
 use axum_extra::{
     headers::{authorization::Bearer, Authorization},
     TypedHeader,
 };
-use jsonwebtoken::{decode, Algorithm, DecodingKey, EncodingKey, Validation};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use mongodb::bson::oid::ObjectId;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use crate::KEYS;
 
-#[warn(dead_code)]
 pub async fn auth_middleware(req: Request<Body>, next: Next) -> Result<Response, AuthError> {
     let headers = req.headers();
     let token = headers
@@ -41,6 +44,8 @@ pub async fn auth_middleware(req: Request<Body>, next: Next) -> Result<Response,
         Err(_) => Err(AuthError::InvalidToken),
     }
 }
+
+pub type Auth = Extension<Arc<Claims>>;
 
 impl<S> FromRequestParts<S> for Claims
 where
@@ -92,14 +97,16 @@ pub struct Claims {
 pub struct AuthResponseBody {
     pub acces_token: String,
     pub token_type: String,
+    pub refresh_token: String,
     pub username: String,
 }
 
 impl AuthResponseBody {
-    pub fn new(acces_token: String, username: String) -> Self {
+    pub fn new(acces_token: String, refresh_token: String, username: String) -> Self {
         Self {
             acces_token,
             token_type: "Bearer".to_string(),
+            refresh_token,
             username,
         }
     }
@@ -112,7 +119,8 @@ pub enum AuthError {
     TokenCreation,
     InvalidToken,
     UserAlreadyExists,
-    InternalServerError
+    InternalServerError,
+    TokenExpired,
 }
 
 impl IntoResponse for AuthError {
@@ -123,7 +131,10 @@ impl IntoResponse for AuthError {
             AuthError::TokenCreation => (StatusCode::INTERNAL_SERVER_ERROR, "Token creation error"),
             AuthError::InvalidToken => (StatusCode::BAD_REQUEST, "Invalid Token"),
             AuthError::UserAlreadyExists => (StatusCode::FOUND, "User already exists"),
-            AuthError::InternalServerError => (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error")
+            AuthError::InternalServerError => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error")
+            }
+            AuthError::TokenExpired => (StatusCode::GONE, "Token expired"),
         };
         let body = Json(json!({
             "error": erorr_message
@@ -131,4 +142,42 @@ impl IntoResponse for AuthError {
 
         (status, body).into_response()
     }
+}
+
+pub fn generate_acces_token(user_email: &str) -> Result<String, AuthError> {
+    let expiration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as usize
+        + 2 * 60 * 60; //2h
+
+    let claims = Claims {
+        email: user_email.to_string(),
+        company: "flexnotes".to_owned(),
+        exp: expiration,
+    };
+
+    let token = jsonwebtoken::encode(&Header::new(Algorithm::HS256), &claims, &KEYS.encoding)
+        .map_err(|_err| AuthError::TokenCreation)?;
+
+    Ok(token)
+}
+
+pub fn generate_refresh_token(user_email: &str) -> Result<String, AuthError> {
+    let expiration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as usize
+        + 2 * 24 * 60 * 60; //2days
+
+    let claims = Claims {
+        email: user_email.to_string(),
+        company: "flexnotes".to_owned(),
+        exp: expiration,
+    };
+
+    let token = jsonwebtoken::encode(&Header::new(Algorithm::HS256), &claims, &KEYS.encoding)
+        .map_err(|_err| AuthError::TokenCreation)?;
+
+    Ok(token)
 }

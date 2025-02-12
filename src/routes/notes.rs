@@ -4,15 +4,18 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
+    Extension, Json,
 };
 
 use futures::StreamExt;
-use mongodb::bson::{doc, oid::ObjectId};
+use mongodb::{
+    bson::{doc, oid::ObjectId},
+    options::{FindOneAndUpdateOptions, ReturnDocument},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::Claims,
+    auth::{Auth, Claims},
     models::{NoteInfo, NotesError, DB},
 };
 
@@ -25,7 +28,7 @@ pub struct CreateNotePayload {
 
 pub async fn create_note(
     State(db): State<DB>,
-    claims: Claims,
+    Extension(claims): Auth,
     Json(payload): Json<CreateNotePayload>,
 ) -> Result<StatusCode, NotesError> {
     if let Some(user) = db
@@ -56,10 +59,10 @@ pub async fn create_note(
 
 pub async fn delete_note(
     State(db): State<DB>,
-    claims: Claims,
+    Extension(claims): Auth,
     Path(id): Path<String>,
 ) -> Result<StatusCode, NotesError> {
-    if let Some(user) = db.get_user(claims.email).await {
+    if let Ok(user) = db.get_user(&claims.email).await {
         let object_id = ObjectId::from_str(&id).unwrap();
         let filter = doc! {
             "_id": object_id,
@@ -89,9 +92,9 @@ pub struct AllNotesReponse {
 
 pub async fn get_all_notes_info(
     State(db): State<DB>,
-    claims: Claims,
+    Extension(claims): Auth,
 ) -> Result<Json<Vec<AllNotesReponse>>, NotesError> {
-    if let Some(user) = db.get_user(claims.email).await {
+    if let Ok(user) = db.get_user(&claims.email).await {
         let filter = doc! {"client_id": user.id};
         match db.notes.find(filter).await {
             Ok(cursor) => {
@@ -122,10 +125,10 @@ pub async fn get_all_notes_info(
 
 pub async fn get_note_by_id(
     State(db): State<DB>,
-    claims: Claims,
+    Extension(claims): Auth,
     Path(id): Path<String>,
 ) -> Result<Json<NoteInfo>, NotesError> {
-    if let Some(user) = db.get_user(claims.email).await {
+    if let Ok(user) = db.get_user(&claims.email).await {
         let filter = doc! {"client_id": user.id, "_id": ObjectId::from_str(&id).unwrap()};
         match db.notes.find_one(filter).await {
             Ok(Some(note)) => Ok(Json(note)),
@@ -139,38 +142,41 @@ pub async fn get_note_by_id(
 
 pub async fn update_note_by_id(
     State(db): State<DB>,
-    claims: Claims,
+    Extension(claims): Auth,
     Path(id): Path<String>,
     Json(payload): Json<CreateNotePayload>,
 ) -> Result<Json<NoteInfo>, NotesError> {
-    let user = match db.get_user(claims.email).await {
-        Some(user) => {
-            user
-        }, 
-        None => {
-            return Err(NotesError::AuthorNotFound)
-        }
-    }; 
-        let filter = doc! {"_id": ObjectId::from_str(&id).unwrap(), "client_id": user.id, };
-        println!("{:?}", filter);
-        match db
-            .notes
-            .find_one_and_update(
-                filter,
-                doc! {"$set": {
+    let user = match db.get_user(&claims.email).await {
+        Ok(user) => user,
+        Err(_) => return Err(NotesError::AuthorNotFound),
+    };
+    let user = match db.get_user(&claims.email).await {
+        Ok(user) => user,
+        Err(_) => return Err(NotesError::AuthorNotFound),
+    };
+    let filter = doc! {"_id": ObjectId::from_str(&id).unwrap(), "client_id": user.id, };
+    let options = FindOneAndUpdateOptions::builder()
+        .return_document(ReturnDocument::After)
+        .build();
+    println!("{:?}", filter);
+    match db
+        .notes
+        .find_one_and_update(
+            filter,
+            doc! {"$set": {
                     "title": payload.title,
                     "content": payload.content,
                     "tags": payload.tags
-                }},
-            )
-            .await
-        {
-            Ok(Some(res)) => Ok(Json(res)),
-            Ok(None) => Err(NotesError::NoteNotFound),
-            Err(err) => {
-                println!("{:?}", err);
-                Err(NotesError::DbError)
-            }
+                }
+            },
+        )
+        .await
+    {
+        Ok(Some(res)) => Ok(Json(res)),
+        Ok(None) => Err(NotesError::NoteNotFound),
+        Err(err) => {
+            println!("{:?}", err);
+            Err(NotesError::DbError)
         }
-    
+    }
 }
