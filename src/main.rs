@@ -6,21 +6,15 @@ use axum::{
     Router,
 };
 use dotenv::dotenv;
-use jsonwebtoken::Header;
 use logging::logging_middleware;
 use models::{DatabaseModel, NoteInfo, UserInfo};
-use mongodb::{
-    bson::{DateTime, Timestamp},
-    Client,
-};
-use std::{
-    sync::{Arc, LazyLock},
-    vec,
-};
-use tower_http::cors::{AllowOrigin, Cors, CorsLayer};
-use tracing_subscriber::{fmt, layer};
+use mongodb::Client;
+use std::sync::{Arc, LazyLock};
+use tower_http::cors::CorsLayer;
+use tracing_subscriber::fmt;
 
 mod auth;
+mod error;
 mod logging;
 pub(crate) mod models;
 mod routes;
@@ -63,7 +57,6 @@ async fn main() {
     let auth_routes = Router::new()
         .route("/login", post(routes::auth::authorize))
         .route("/register", post(routes::auth::register))
-        .route("/check", get(routes::token_check::protected))
         .route("/refresh", post(routes::auth::refresh_token));
 
     let note_routes = Router::new()
