@@ -58,7 +58,7 @@ pub async fn register(
     }
 
     if !db.user_exist(&payload.username, &payload.email).await? {
-        let user = db
+        let _user = db
             .create_user(&payload.username, &payload.email, &payload.password)
             .await?;
     }

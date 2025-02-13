@@ -33,11 +33,6 @@ async fn main() {
 
     fmt::fmt().pretty().init();
 
-    let refresh_store = match sled::open("/tmp/refresh_store") {
-        Ok(store) => store,
-        Err(_) => panic!("Failed to open refresh token db"),
-    };
-
     let cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
         .allow_headers([header::AUTHORIZATION, header::ACCEPT, header::CONTENT_TYPE])
@@ -75,7 +70,6 @@ async fn main() {
         .nest("/auth", auth_routes)
         .nest("/notes", note_routes)
         .with_state(db_model)
-        .with_state(Arc::new(refresh_store))
         .layer(middleware::from_fn(logging_middleware))
         .layer(cors);
 

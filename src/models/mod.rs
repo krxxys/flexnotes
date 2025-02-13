@@ -88,7 +88,7 @@ impl DatabaseModel {
             .find_one(doc! {"$or": [{"username": username}, {"email": email}]})
             .await
         {
-            Ok(Some(_)) => Ok(true),
+            Ok(Some(_)) => Err(AppError::user_exist()),
             Ok(None) => Ok(false),
             Err(_) => Err(AppError::internal_error()),
         }
@@ -125,8 +125,8 @@ impl DatabaseModel {
         };
         match self.notes.insert_one(new_note).await {
             Ok(res) => {
-                if let Some(objectId) = res.inserted_id.as_object_id() {
-                    Ok(objectId)
+                if let Some(object_id) = res.inserted_id.as_object_id() {
+                    Ok(object_id)
                 } else {
                     Err(AppError::internal_error())
                 }
