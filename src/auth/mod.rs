@@ -7,14 +7,14 @@ use axum_extra::{
     headers::{authorization::Bearer, Authorization},
     TypedHeader,
 };
-use jsonwebtoken::{decode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
-pub type Auth = Extension<Arc<Claims>>;
+pub type Auth = Extension<Arc<TokenData<Claims>>>;
 
 pub async fn auth_middleware(req: Request<Body>, next: Next) -> Result<Response, AppError> {
     let headers = req.headers();
@@ -25,7 +25,7 @@ pub async fn auth_middleware(req: Request<Body>, next: Next) -> Result<Response,
 
     let token = token.trim_start_matches("Bearer ");
     let key = &KEYS.decoding;
-    let validation = Validation::new(Algorithm::ES256);
+    let validation = Validation::new(Algorithm::HS256);
 
     match decode::<Claims>(token, key, &validation) {
         Ok(token_data) => {
@@ -36,7 +36,10 @@ pub async fn auth_middleware(req: Request<Body>, next: Next) -> Result<Response,
 
             Ok(next.run(req).await)
         }
-        Err(_) => Err(AppError::unauthorized()),
+        Err(err) => {
+            println!("Error {}", err);
+            Err(AppError::unauthorized())
+        }
     }
 }
 

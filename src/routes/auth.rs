@@ -29,8 +29,8 @@ pub async fn authorize(
 
     match verify(payload.password, &user.password) {
         Ok(true) => {
-            let token = generate_acces_token(&user.email)?;
-            let refresh_token = generate_refresh_token(&user.email)?;
+            let token = generate_acces_token(&user.username)?;
+            let refresh_token = generate_refresh_token(&user.username)?;
             Ok(Json(AuthResponseBody::new(
                 token,
                 refresh_token,
@@ -63,8 +63,8 @@ pub async fn register(
             .await?;
     }
 
-    let token = generate_acces_token(&payload.email)?;
-    let refresh_token = generate_refresh_token(&payload.email)?;
+    let token = generate_acces_token(&payload.username)?;
+    let refresh_token = generate_refresh_token(&payload.username)?;
     Ok(Json(AuthResponseBody::new(
         token,
         refresh_token,

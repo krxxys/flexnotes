@@ -1,6 +1,6 @@
 use std::{str::FromStr, sync::Arc};
 
-use axum::{http::StatusCode, response::IntoResponse, Json};
+use axum::http::StatusCode;
 use bcrypt::DEFAULT_COST;
 use futures::StreamExt;
 use mongodb::{
@@ -9,7 +9,6 @@ use mongodb::{
     Collection,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use crate::{
     error::AppError,
@@ -33,31 +32,6 @@ pub struct NoteInfo {
     pub title: String,
     pub content: String,
     pub tags: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum NotesError {
-    DbError,
-    NoteNotFound,
-    AuthorNotFound,
-}
-
-impl IntoResponse for NotesError {
-    fn into_response(self) -> axum::response::Response {
-        let (status, error_message) = match self {
-            NotesError::DbError => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to create new note",
-            ),
-            NotesError::NoteNotFound => (StatusCode::NOT_FOUND, "Note not found"),
-            NotesError::AuthorNotFound => (StatusCode::NOT_FOUND, "Author not found"),
-        };
-        let body = Json(json!({
-            "error": error_message
-        }));
-
-        (status, body).into_response()
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -174,6 +148,7 @@ impl DatabaseModel {
                     }
                 },
             )
+            .with_options(options)
             .await
         {
             Ok(Some(data)) => Ok(data),
