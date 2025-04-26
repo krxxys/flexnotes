@@ -50,31 +50,6 @@ pub struct Claims {
     pub exp: usize,
 }
 
-impl<S> FromRequestParts<S> for Claims
-where
-    S: Send + Sync,
-{
-    type Rejection = AppError;
-
-    async fn from_request_parts(
-        parts: &mut axum::http::request::Parts,
-        _state: &S,
-    ) -> Result<Self, Self::Rejection> {
-        let TypedHeader(Authorization(bearer)) = parts
-            .extract::<TypedHeader<Authorization<Bearer>>>()
-            .await
-            .map_err(|_| AppError::unauthorized())?;
-
-        let token_data = decode::<Claims>(
-            bearer.token(),
-            &KEYS.decoding,
-            &Validation::new(Algorithm::HS256),
-        )
-        .map_err(|_| AppError::unauthorized())?;
-        Ok(token_data.claims)
-    }
-}
-
 pub struct Keys {
     pub encoding: EncodingKey,
     pub decoding: DecodingKey,
@@ -91,16 +66,16 @@ impl Keys {
 
 #[derive(Debug, Serialize)]
 pub struct AuthResponseBody {
-    pub acces_token: String,
+    pub access_token: String,
     pub token_type: String,
     pub refresh_token: String,
     pub username: String,
 }
 
 impl AuthResponseBody {
-    pub fn new(acces_token: String, refresh_token: String, username: String) -> Self {
+    pub fn new(access_token: String, refresh_token: String, username: String) -> Self {
         Self {
-            acces_token,
+            access_token,
             token_type: "Bearer".to_string(),
             refresh_token,
             username,

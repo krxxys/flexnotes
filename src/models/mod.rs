@@ -4,7 +4,7 @@ use axum::http::StatusCode;
 use bcrypt::DEFAULT_COST;
 use futures::StreamExt;
 use mongodb::{
-    bson::{doc, oid::ObjectId},
+    bson::{doc, oid::ObjectId, to_bson},
     options::{FindOneAndUpdateOptions, ReturnDocument},
     Collection,
 };
@@ -32,6 +32,23 @@ pub struct NoteInfo {
     pub title: String,
     pub content: String,
     pub tags: Vec<String>,
+    pub todo_list: Vec<TodoInfo>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TodoInfo {
+    #[serde(rename = "_id")]
+    pub id: ObjectId,
+    pub title: String,
+    pub status: bool,
+    pub priority: TodoPriority,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub enum TodoPriority {
+    High,
+    Normal,
+    Low,
 }
 
 #[derive(Debug, Clone)]
@@ -96,6 +113,7 @@ impl DatabaseModel {
             title: data.title,
             content: data.content,
             tags: data.tags,
+            todo_list: vec![],
         };
         match self.notes.insert_one(new_note).await {
             Ok(res) => {
@@ -190,6 +208,129 @@ impl DatabaseModel {
             }
             Err(err) => {
                 eprintln!("{:?}", err);
+                Err(AppError::internal_error())
+            }
+        }
+    }
+    pub async fn create_todo(
+        &self,
+        user: UserInfo,
+        note_id: ObjectId,
+        todo_title: String,
+        todo_status: bool,
+        todo_priority: TodoPriority,
+    ) -> Result<StatusCode, AppError> {
+        let filter = doc! {"client_id": user.id, "_id": note_id};
+        let new_todo = TodoInfo {
+            id: ObjectId::new(),
+            title: todo_title,
+            status: todo_status,
+            priority: todo_priority,
+        };
+        match to_bson(&new_todo) {
+            Ok(todo_bson) => {
+                match self
+                    .notes
+                    .update_one(filter, doc! {"$push" : { "todo_list": todo_bson }})
+                    .await
+                {
+                    Ok(res) => {
+                        if res.modified_count > 0 {
+                            return Ok(StatusCode::OK);
+                        } else {
+                            return Err(AppError::not_found());
+                        }
+                    }
+                    Err(err) => Err(AppError::internal_error()),
+                }
+            }
+            Err(err) => {
+                eprintln!("Error ocured: {:?}", err);
+                Err(AppError::internal_error())
+            }
+        }
+    }
+    pub async fn update_todo(
+        &self,
+        user: UserInfo,
+        note_id: ObjectId,
+        todo_id: ObjectId,
+        title: String,
+        status: bool,
+        priority: TodoPriority,
+    ) -> Result<StatusCode, AppError> {
+        let filter = doc! {
+            "client_id": user.id,
+             "_id": note_id,
+             "todo_list._id": todo_id
+        };
+
+        let priority = match to_bson(&priority) {
+            Ok(bson) => bson,
+            Err(err) => {
+                eprintln!("Error occured: {:?}", err);
+                return Err(AppError::internal_error());
+            }
+        };
+
+        let update = doc! {"$set": {
+            "todo_list.$.title": title,
+            "todo_list.$.status": status,
+            "todo_list.$.priority": priority
+        }};
+
+        match self.notes.update_one(filter, update).await {
+            Ok(res) => {
+                if res.matched_count > 0 {
+                    Ok(StatusCode::OK)
+                } else {
+                    Ok(StatusCode::NOT_MODIFIED)
+                }
+            }
+            Err(err) => {
+                eprintln!("Error occured: {:?}", err);
+                Err(AppError::internal_error())
+            }
+        }
+    }
+    pub async fn delete_todo(
+        &self,
+        user: UserInfo,
+        note_id: ObjectId,
+        todo_id: ObjectId,
+    ) -> Result<StatusCode, AppError> {
+        let filter = doc! { "_id": note_id, "client_id": user.id, "todo_list._id": todo_id};
+        let delete = doc! {"$pull": { //pull removes element
+            "todo_list": {
+                "_id": todo_id
+            }
+        }};
+
+        match self.notes.update_one(filter, delete).await {
+            Ok(res) => {
+                if res.modified_count > 0 {
+                    Ok(StatusCode::OK)
+                } else {
+                    Ok(StatusCode::NOT_MODIFIED)
+                }
+            }
+            Err(err) => {
+                eprintln!("Error occured: {:?}", err);
+                Err(AppError::internal_error())
+            }
+        }
+    }
+    pub async fn get_todos_by_note_id(
+        &self,
+        user: UserInfo,
+        note_id: ObjectId,
+    ) -> Result<Vec<TodoInfo>, AppError> {
+        let filter = doc! {"_id": note_id, "client_id": user.id};
+        match self.notes.find_one(filter).await {
+            Ok(Some(note)) => Ok(note.todo_list),
+            Ok(None) => Ok(vec![]),
+            Err(err) => {
+                eprintln!("Error occured: {:?}", err);
                 Err(AppError::internal_error())
             }
         }

@@ -55,6 +55,13 @@ impl AppError {
             message: "Not found".into(),
         }
     }
+
+    pub fn bad_request() -> Self {
+        Self {
+            status_code: StatusCode::BAD_REQUEST,
+            message: "Something is missing".into(),
+        }
+    }
 }
 
 impl IntoResponse for AppError {

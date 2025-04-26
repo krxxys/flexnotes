@@ -1,11 +1,11 @@
-use axum::{extract::State, Json};
+use axum::{extract::State, http::StatusCode, Extension, Json};
 use bcrypt::verify;
 use jsonwebtoken::{decode, Algorithm, Validation};
 use mongodb::bson::{doc, DateTime};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::{generate_acces_token, generate_refresh_token, AuthResponseBody, Claims},
+    auth::{generate_acces_token, generate_refresh_token, Auth, AuthResponseBody, Claims},
     error::AppError,
     models::DB,
     KEYS,
@@ -107,4 +107,8 @@ pub async fn refresh_token(
         }
         Err(_) => Err(AppError::unauthorized()),
     }
+}
+
+pub async fn check_auth(Extension(token_data): Auth) -> Result<StatusCode, AppError> {
+    Ok(StatusCode::ACCEPTED)
 }
