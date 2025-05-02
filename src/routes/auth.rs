@@ -109,6 +109,6 @@ pub async fn refresh_token(
     }
 }
 
-pub async fn check_auth(Extension(token_data): Auth) -> Result<StatusCode, AppError> {
+pub async fn check_auth(Extension(_token_data): Auth) -> Result<StatusCode, AppError> {
     Ok(StatusCode::ACCEPTED)
 }

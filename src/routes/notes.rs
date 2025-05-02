@@ -33,7 +33,7 @@ pub async fn create_note(
 pub async fn delete_note(
     State(db): State<DB>,
     Extension(token_data): Auth,
-    Path(id): Path<String>,
+    Path(id): Path<ObjectId>,
 ) -> Result<StatusCode, AppError> {
     let user = db.get_user(&token_data.claims.username).await?;
     return db.delete_note(id, user).await;
@@ -58,7 +58,7 @@ pub async fn get_all_notes_info(
 pub async fn get_note_by_id(
     State(db): State<DB>,
     Extension(token_data): Auth,
-    Path(id): Path<String>,
+    Path(id): Path<ObjectId>,
 ) -> Result<Json<NoteInfo>, AppError> {
     let user = db.get_user(&token_data.claims.username).await?;
     let note = db.note_by_id(id, user).await?;
@@ -68,7 +68,7 @@ pub async fn get_note_by_id(
 pub async fn update_note_by_id(
     State(db): State<DB>,
     Extension(token_data): Auth,
-    Path(id): Path<String>,
+    Path(id): Path<ObjectId>,
     Json(payload): Json<CreateNotePayload>,
 ) -> Result<Json<NoteInfo>, AppError> {
     let user = db.get_user(&token_data.claims.username).await?;

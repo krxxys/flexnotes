@@ -1,12 +1,5 @@
 use crate::{error::AppError, KEYS};
-use axum::{
-    body::Body, extract::FromRequestParts, http::Request, middleware::Next, response::Response,
-    Extension, RequestPartsExt,
-};
-use axum_extra::{
-    headers::{authorization::Bearer, Authorization},
-    TypedHeader,
-};
+use axum::{body::Body, http::Request, middleware::Next, response::Response, Extension};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 use std::{

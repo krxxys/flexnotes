@@ -16,7 +16,7 @@ use tracing_subscriber::fmt;
 mod auth;
 mod error;
 mod logger;
-pub(crate) mod models;
+mod models;
 mod routes;
 
 static KEYS: LazyLock<Keys> = LazyLock::new(|| {
@@ -40,11 +40,10 @@ pub async fn setup_database() -> Arc<DatabaseModel> {
         .database("flexnote")
         .collection::<NoteInfo>("notes");
 
-    let database = Arc::new(DatabaseModel {
+    Arc::new(DatabaseModel {
         notes: notes_collection,
         users: users_collection,
-    });
-    database
+    })
 }
 
 #[tokio::main]

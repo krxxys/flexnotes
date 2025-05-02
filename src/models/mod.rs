@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
 use axum::http::StatusCode;
 use bcrypt::DEFAULT_COST;
@@ -127,10 +127,9 @@ impl DatabaseModel {
         }
     }
 
-    pub async fn delete_note(&self, id: String, user: UserInfo) -> Result<StatusCode, AppError> {
-        let object_id = ObjectId::from_str(&id).unwrap();
+    pub async fn delete_note(&self, id: ObjectId, user: UserInfo) -> Result<StatusCode, AppError> {
         let filter = doc! {
-            "_id": object_id,
+            "_id": id,
             "client_id": user.id
         };
         match self.notes.find_one_and_delete(filter).await {
@@ -149,9 +148,9 @@ impl DatabaseModel {
         &self,
         data: CreateNotePayload,
         user: UserInfo,
-        id: String,
+        id: ObjectId,
     ) -> Result<NoteInfo, AppError> {
-        let filter = doc! {"_id": ObjectId::from_str(&id).unwrap(), "client_id": user.id, };
+        let filter = doc! {"_id": id, "client_id": user.id, };
         let options = FindOneAndUpdateOptions::builder()
             .return_document(ReturnDocument::After)
             .build();
@@ -175,8 +174,8 @@ impl DatabaseModel {
         }
     }
 
-    pub async fn note_by_id(&self, id: String, user: UserInfo) -> Result<NoteInfo, AppError> {
-        let filter = doc! {"client_id": user.id, "_id": ObjectId::from_str(&id).unwrap()};
+    pub async fn note_by_id(&self, id: ObjectId, user: UserInfo) -> Result<NoteInfo, AppError> {
+        let filter = doc! {"client_id": user.id, "_id": id};
         match self.notes.find_one(filter).await {
             Ok(Some(note)) => Ok(note),
             Ok(None) => Err(AppError::not_found()),
@@ -236,12 +235,12 @@ impl DatabaseModel {
                 {
                     Ok(res) => {
                         if res.modified_count > 0 {
-                            return Ok(StatusCode::OK);
+                            Ok(StatusCode::OK)
                         } else {
-                            return Err(AppError::not_found());
+                            Err(AppError::not_found())
                         }
                     }
-                    Err(err) => Err(AppError::internal_error()),
+                    Err(_err) => Err(AppError::internal_error()),
                 }
             }
             Err(err) => {
