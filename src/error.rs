@@ -32,7 +32,7 @@ impl AppError {
     pub fn user_exist() -> Self {
         Self {
             status_code: StatusCode::FOUND,
-            message: "User already exists".into(),
+            message: "User with this username or email already exists".into(),
         }
     }
 

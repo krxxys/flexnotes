@@ -99,7 +99,19 @@ impl DatabaseModel {
                 .map_err(|_| AppError::internal_error())?,
         };
 
-        Ok(new_user)
+        match self.users.insert_one(&new_user).await {
+            Ok(_res) => {
+                println!("User created");
+                Ok(new_user)
+            }
+            Err(err) => {
+                println!("Error: {:?}", err);
+                Err(AppError::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "User cannot be created :(",
+                ))
+            }
+        }
     }
 
     pub async fn create_note(

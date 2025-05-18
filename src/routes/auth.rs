@@ -21,6 +21,7 @@ pub async fn authorize(
     State(db): State<DB>,
     Json(payload): Json<AuthPayload>,
 ) -> Result<Json<AuthResponseBody>, AppError> {
+    println!("{:?}", payload);
     if payload.username.is_empty() || payload.password.is_empty() {
         return Err(AppError::missign_credentials());
     }
