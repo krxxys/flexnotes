@@ -56,7 +56,9 @@ There's already a Insomnia HTTP Client data with the api demonstration
 Have Rust, Mongodb(if you want the local db, you can use cloud option)
 ``
 git clone https://github.com/krxxys/flexnotes.git
+
 cd flexnotes 
+
 cargo run
 ``
 # Flexnotes client
