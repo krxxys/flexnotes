@@ -4,8 +4,7 @@ Flexnotes is note taking app backend created for educational purposes to learn w
 # Project milestones
 1. [X] JWT Auth 
 2. [X] Login/Register system
-3. [X] REST Notes system that handles markdown code of note 
-4. [X] Todo system in the notes 
+3. [X] REST Notes system with todos nested 
 5. [ ] Implement the swagger like documentation
 6. [ ] Major refactoring 
 7. [ ] Implement logger
