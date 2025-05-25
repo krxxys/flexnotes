@@ -1,0 +1,42 @@
+
+services: 
+  mongodb: 
+    image: mongo
+    container_name: mongodb
+    restart: unless-stopped
+    ports: 
+      - "27018:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment: 
+      MONGO_INITDB_ROOT_USERNAME: admin #example
+      MONGO_INITDB_ROOT_PASSWORD: admin #example 
+      MONGO_INITDB_DATABASE: flexnotes 
+    healthcheck: 
+      test: mongosh --eval "db.adminCommand('ping')"
+      interval: 30s 
+      timeout: 30s 
+      retries: 3
+
+  backend: 
+    build:
+        context: . 
+        dockerfile: Dockerfile.backend
+    container_name: backend 
+    ports: 
+      - "3001:3001"
+    environment: 
+      DB_URL: "mongodb://admin:admin@mongodb:27017/flexnotes?authSource=admin" #example set your own login:password
+      JWT_SECRET: "YOUR_SECRET"
+      RUST_BACKTRACE: true 
+      CARGO_HOME: "/usr/local/cargo"
+    restart: unless-stopped
+    command: ./flexnotes
+    #depends_on: 
+    #  mongodb: 
+    #    condition: service_healthy
+    tty: true 
+    stdin_open: true
+volumes: 
+  mongodb_data:
+ 

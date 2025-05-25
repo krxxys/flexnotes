@@ -59,6 +59,7 @@ async fn main() {
         .allow_headers([header::AUTHORIZATION, header::ACCEPT, header::CONTENT_TYPE])
         .allow_origin("http://localhost:5173".parse::<HeaderValue>().unwrap())
         .allow_credentials(true);
+    
 
     let auth_routes = Router::new()
         .route("/login", post(routes::auth::authorize))
