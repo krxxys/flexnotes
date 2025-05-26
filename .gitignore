@@ -1,5 +1,5 @@
 /target
 .env
-todo
+.env.production
 Cargo.lock
 /.vscode

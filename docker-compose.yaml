@@ -22,19 +22,19 @@ services:
     build:
         context: . 
         dockerfile: Dockerfile.backend
-    container_name: backend 
+    container_name: flexnotes-backend 
+    env_file: 
+      - .env.production
     ports: 
       - "3001:3001"
-    environment: 
-      DB_URL: "mongodb://admin:admin@mongodb:27017/flexnotes?authSource=admin" #example set your own login:password
-      JWT_SECRET: "YOUR_SECRET"
+    environment:
       RUST_BACKTRACE: true 
       CARGO_HOME: "/usr/local/cargo"
     restart: unless-stopped
     command: ./flexnotes
-    #depends_on: 
-    #  mongodb: 
-    #    condition: service_healthy
+    depends_on: 
+      - mongodb 
+    
     tty: true 
     stdin_open: true
 volumes: 
