@@ -2,6 +2,7 @@
 Flexnotes is note taking app backend created for educational purposes to learn writting backend in rust. Flexnotes build on top of axum and mongodb(to store notes, todos and users). There's a frontend client written in vue but you can write one yourself! Feel free to write your own flexnotes client :))
 
 # Project milestones
+```
 [X] JWT Auth 
 [X] Login/Register system
 [X] REST Notes system that handles markdown code of note 
@@ -9,7 +10,8 @@ Flexnotes is note taking app backend created for educational purposes to learn w
 [X] Implement dockers for production
 [ ] Implement the swagger like documentation
 [ ] Major refactoring 
-[ ] Implement logger 
+[X] Implement logger 
+```
 # API Examples 
 There's already a Insomnia HTTP Client data with the api demonstration 
 ## Authentication Routes (`/auth`)
