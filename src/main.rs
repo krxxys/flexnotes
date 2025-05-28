@@ -7,7 +7,7 @@ use axum::{
 };
 use dotenv::dotenv;
 use logger::logger_middleware;
-use models::{DatabaseModel, NoteInfo, UserInfo};
+use models::{DatabaseModel, LogMessage, NoteInfo, UserInfo};
 use mongodb::Client;
 use std::sync::{Arc, LazyLock};
 use tower_http::cors::CorsLayer;
@@ -40,9 +40,14 @@ pub async fn setup_database() -> Arc<DatabaseModel> {
         .database("flexnote")
         .collection::<NoteInfo>("notes");
 
+    let logs_collection = mongo_client
+        .database("flexnote")
+        .collection::<LogMessage>("logs");
+
     Arc::new(DatabaseModel {
         notes: notes_collection,
         users: users_collection,
+        logs: logs_collection,
     })
 }
 
@@ -54,12 +59,13 @@ async fn main() {
 
     let database = setup_database().await;
 
+    let port: String = std::env::var("BACKEND_PORT").unwrap_or("3001".to_string());
+
     let cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
         .allow_headers([header::AUTHORIZATION, header::ACCEPT, header::CONTENT_TYPE])
         .allow_origin("http://localhost:5173".parse::<HeaderValue>().unwrap())
         .allow_credentials(true);
-    
 
     let auth_routes = Router::new()
         .route("/login", post(routes::auth::authorize))
@@ -98,13 +104,16 @@ async fn main() {
         .route("/", get(root))
         .nest("/auth", auth_routes)
         .nest("/notes", note_routes)
-        .with_state(database)
-        .layer(middleware::from_fn(logger_middleware))
+        .with_state(database.clone())
+        .layer(middleware::from_fn_with_state(
+            database.clone(),
+            logger_middleware,
+        ))
         .layer(cors);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3001")
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
         .await
-        .expect("Failed to listen on port 3001");
+        .expect(format!("Failed to listen on port: {}", port).as_str());
     axum::serve(listener, app).await.unwrap();
 }
 

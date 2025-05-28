@@ -1,7 +1,7 @@
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde_json::json;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AppError {
     pub status_code: StatusCode,
     pub message: String,
@@ -66,6 +66,8 @@ impl AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
-        (self.status_code, Json(json!({"error": self.message}))).into_response()
+        let mut res = (self.status_code, Json(json!({"error": self.message}))).into_response();
+        res.extensions_mut().insert(self);
+        res
     }
 }

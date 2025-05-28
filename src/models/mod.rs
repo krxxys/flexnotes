@@ -4,7 +4,7 @@ use axum::http::StatusCode;
 use bcrypt::DEFAULT_COST;
 use futures::StreamExt;
 use mongodb::{
-    bson::{doc, oid::ObjectId, to_bson},
+    bson::{doc, oid::ObjectId, to_bson, DateTime},
     options::{FindOneAndUpdateOptions, ReturnDocument},
     Collection,
 };
@@ -14,6 +14,21 @@ use crate::{
     error::AppError,
     routes::notes::{AllNotesReponse, CreateNotePayload},
 };
+
+#[derive(Serialize, Debug)]
+pub enum LogMessageStatus {
+    WARN,
+    ERROR,
+    OK,
+}
+
+#[derive(Serialize, Debug)]
+pub struct LogMessage {
+    pub status: LogMessageStatus,
+    pub message: String,
+    pub time: DateTime,
+    pub uri: String,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct UserInfo {
@@ -55,6 +70,7 @@ pub enum TodoPriority {
 pub struct DatabaseModel {
     pub notes: Collection<NoteInfo>,
     pub users: Collection<UserInfo>,
+    pub logs: Collection<LogMessage>,
 }
 
 pub type DB = Arc<DatabaseModel>;
@@ -343,6 +359,23 @@ impl DatabaseModel {
             Err(err) => {
                 eprintln!("Error occured: {:?}", err);
                 Err(AppError::internal_error())
+            }
+        }
+    }
+
+    pub async fn push_log(&self, log_status: LogMessageStatus, message: String, uri: String) {
+        let log = LogMessage {
+            status: log_status,
+            message: message,
+            uri: uri,
+            time: DateTime::now(),
+        };
+        match self.logs.insert_one(log).await {
+            Ok(res) => {
+                println!("Log pushed");
+            }
+            Err(err) => {
+                eprintln!("Failed to push log into the DB");
             }
         }
     }
