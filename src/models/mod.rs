@@ -11,6 +11,7 @@ use mongodb::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    auth::AuthUser,
     error::AppError,
     routes::notes::{AllNotesReponse, CreateNotePayload},
 };
@@ -133,7 +134,7 @@ impl DatabaseModel {
     pub async fn create_note(
         &self,
         data: CreateNotePayload,
-        user: UserInfo,
+        user: Arc<UserInfo>,
     ) -> Result<ObjectId, AppError> {
         let new_note = NoteInfo {
             id: ObjectId::new(),
@@ -155,7 +156,11 @@ impl DatabaseModel {
         }
     }
 
-    pub async fn delete_note(&self, id: ObjectId, user: UserInfo) -> Result<StatusCode, AppError> {
+    pub async fn delete_note(
+        &self,
+        id: ObjectId,
+        user: Arc<UserInfo>,
+    ) -> Result<StatusCode, AppError> {
         let filter = doc! {
             "_id": id,
             "client_id": user.id
@@ -175,7 +180,7 @@ impl DatabaseModel {
     pub async fn update_note(
         &self,
         data: CreateNotePayload,
-        user: UserInfo,
+        user: Arc<UserInfo>,
         id: ObjectId,
     ) -> Result<NoteInfo, AppError> {
         let filter = doc! {"_id": id, "client_id": user.id, };
@@ -202,7 +207,11 @@ impl DatabaseModel {
         }
     }
 
-    pub async fn note_by_id(&self, id: ObjectId, user: UserInfo) -> Result<NoteInfo, AppError> {
+    pub async fn note_by_id(
+        &self,
+        id: ObjectId,
+        user: Arc<UserInfo>,
+    ) -> Result<NoteInfo, AppError> {
         let filter = doc! {"client_id": user.id, "_id": id};
         match self.notes.find_one(filter).await {
             Ok(Some(note)) => Ok(note),
@@ -213,7 +222,7 @@ impl DatabaseModel {
 
     pub async fn all_notes_from_user(
         &self,
-        user: UserInfo,
+        user: Arc<UserInfo>,
     ) -> Result<Vec<AllNotesReponse>, AppError> {
         let filter = doc! {"client_id": user.id};
         match self.notes.find(filter).await {
@@ -241,7 +250,7 @@ impl DatabaseModel {
     }
     pub async fn create_todo(
         &self,
-        user: UserInfo,
+        user: Arc<UserInfo>,
         note_id: ObjectId,
         todo_title: String,
         todo_status: bool,
@@ -279,7 +288,7 @@ impl DatabaseModel {
     }
     pub async fn update_todo(
         &self,
-        user: UserInfo,
+        user: Arc<UserInfo>,
         note_id: ObjectId,
         todo_id: ObjectId,
         title: String,
@@ -322,7 +331,7 @@ impl DatabaseModel {
     }
     pub async fn delete_todo(
         &self,
-        user: UserInfo,
+        user: Arc<UserInfo>,
         note_id: ObjectId,
         todo_id: ObjectId,
     ) -> Result<StatusCode, AppError> {
@@ -349,7 +358,7 @@ impl DatabaseModel {
     }
     pub async fn get_todos_by_note_id(
         &self,
-        user: UserInfo,
+        user: Arc<UserInfo>,
         note_id: ObjectId,
     ) -> Result<Vec<TodoInfo>, AppError> {
         let filter = doc! {"_id": note_id, "client_id": user.id};

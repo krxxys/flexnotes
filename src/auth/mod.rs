@@ -1,5 +1,11 @@
-use crate::{error::AppError, KEYS};
-use axum::{body::Body, http::Request, middleware::Next, response::Response, Extension};
+use crate::{
+    error::AppError,
+    models::{UserInfo, DB},
+    KEYS,
+};
+use axum::{
+    body::Body, extract::State, http::Request, middleware::Next, response::Response, Extension,
+};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -8,8 +14,13 @@ use std::{
 };
 
 pub type Auth = Extension<Arc<TokenData<Claims>>>;
+pub type AuthUser = Extension<Arc<UserInfo>>;
 
-pub async fn auth_middleware(req: Request<Body>, next: Next) -> Result<Response, AppError> {
+pub async fn auth_middleware(
+    State(db): State<DB>,
+    req: Request<Body>,
+    next: Next,
+) -> Result<Response, AppError> {
     let headers = req.headers();
     let token = headers
         .get("Authorization")
@@ -24,8 +35,10 @@ pub async fn auth_middleware(req: Request<Body>, next: Next) -> Result<Response,
         Ok(token_data) => {
             println!("Authenicated user: {}", token_data.claims.username);
 
+            let user = db.get_user(&token_data.claims.username).await?;
             let mut req = req;
             req.extensions_mut().insert(Arc::new(token_data));
+            req.extensions_mut().insert(Arc::new(user));
 
             Ok(next.run(req).await)
         }

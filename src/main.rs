@@ -73,7 +73,10 @@ async fn main() {
         .route("/refresh", post(routes::auth::refresh_token))
         .route(
             "/check",
-            get(routes::auth::check_auth).layer(middleware::from_fn(auth_middleware)),
+            get(routes::auth::check_auth).layer(middleware::from_fn_with_state(
+                database.clone(),
+                auth_middleware,
+            )),
         );
 
     let todo_nested_route = Router::new()
@@ -98,7 +101,10 @@ async fn main() {
                 .delete(routes::notes::delete_note),
         )
         .merge(todo_nested_route)
-        .layer(middleware::from_fn(auth_middleware));
+        .layer(middleware::from_fn_with_state(
+            database.clone(),
+            auth_middleware,
+        ));
 
     let app = Router::new()
         .route("/", get(root))
