@@ -1,5 +1,5 @@
 # Flexnotes 
-Flexnotes is note taking app backend created for educational purposes to learn writting backend in rust. Flexnotes build on top of axum and mongodb(to store notes, todos and users). There's a frontend client written in vue but you can write one yourself! Feel free to write your own flexnotes client :))
+Flexnotes is note taking app backend created for educational purposes to learn writting backend in rust. Flexnotes is build on top of axum and mongodb(to store notes, todos and users). There's a frontend client written in vue but you can write one yourself! Feel free to write your own flexnotes client :))
 
 # Project milestones
 ```
@@ -59,7 +59,7 @@ There's already a Insomnia HTTP Client data with the api demonstration
 ```bash
 git clone https://github.com/krxxys/flexnotes.git && cd flexnotes
 ```
-2. Create .env (for the local) and .env.production (for the backend) files based on the .env.example
+2. Create .env (for the local) and .env.production (for the docker backend if u want to use docker) files based on the .env.example
 3. To run localy you need local mongodb server or you can use mongo from the docker but set the good ports
 ```bash 
 # To run locally 

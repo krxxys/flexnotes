@@ -6,7 +6,7 @@ use futures::StreamExt;
 use mongodb::{
     bson::{doc, oid::ObjectId, to_bson, DateTime},
     options::{FindOneAndUpdateOptions, ReturnDocument},
-    Collection,
+    Client, Collection,
 };
 use serde::{Deserialize, Serialize};
 
@@ -72,6 +72,7 @@ pub struct DatabaseModel {
     pub notes: Collection<NoteInfo>,
     pub users: Collection<UserInfo>,
     pub logs: Collection<LogMessage>,
+    pub client: Arc<Client>,
 }
 
 pub type DB = Arc<DatabaseModel>;

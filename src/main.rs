@@ -1,6 +1,8 @@
+use crate::{error::AppError, models::DB};
 use auth::{auth_middleware, Keys};
 use axum::{
-    http::{header, HeaderValue, Method},
+    extract::State,
+    http::{header, HeaderValue, Method, StatusCode},
     middleware,
     routing::{delete, get, patch, post},
     Router,
@@ -48,6 +50,7 @@ pub async fn setup_database() -> Arc<DatabaseModel> {
         notes: notes_collection,
         users: users_collection,
         logs: logs_collection,
+        client: Arc::new(mongo_client),
     })
 }
 
@@ -107,7 +110,6 @@ async fn main() {
         ));
 
     let app = Router::new()
-        .route("/", get(root))
         .nest("/auth", auth_routes)
         .nest("/notes", note_routes)
         .with_state(database.clone())
@@ -121,8 +123,4 @@ async fn main() {
         .await
         .expect(format!("Failed to listen on port: {}", port).as_str());
     axum::serve(listener, app).await.unwrap();
-}
-
-async fn root() -> &'static str {
-    "Hello world!"
 }
