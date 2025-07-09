@@ -3,3 +3,5 @@
 .env.production
 Cargo.lock
 /.vscode
+ideas
+logs

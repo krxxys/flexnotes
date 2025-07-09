@@ -1,15 +1,14 @@
+use crate::{
+    auth::{generate_acces_token, generate_refresh_token, AuthResponseBody, AuthUser, Claims},
+    error::ApiError,
+    services::user_service::{login_user, register_user},
+    AppState, KEYS,
+};
 use axum::{extract::State, http::StatusCode, Extension, Json};
-use bcrypt::verify;
 use jsonwebtoken::{decode, Algorithm, Validation};
 use mongodb::bson::{doc, DateTime};
 use serde::{Deserialize, Serialize};
-
-use crate::{
-    auth::{generate_acces_token, generate_refresh_token, Auth, AuthResponseBody, Claims},
-    error::AppError,
-    models::DB,
-    KEYS,
-};
+use tracing::error;
 
 #[derive(Debug, Deserialize)]
 pub struct AuthPayload {
@@ -18,29 +17,20 @@ pub struct AuthPayload {
 }
 
 pub async fn authorize(
-    State(db): State<DB>,
+    State(app_state): State<AppState>,
     Json(payload): Json<AuthPayload>,
-) -> Result<Json<AuthResponseBody>, AppError> {
-    println!("{:?}", payload);
+) -> Result<Json<AuthResponseBody>, ApiError> {
+    //println!("{:?}", payload);
     if payload.username.is_empty() || payload.password.is_empty() {
-        return Err(AppError::missign_credentials());
+        return Err(ApiError::MissingCredential);
     }
-
-    let user = db.get_user(&payload.username).await?;
-
-    match verify(payload.password, &user.password) {
-        Ok(true) => {
-            let token = generate_acces_token(&user.username)?;
-            let refresh_token = generate_refresh_token(&user.username)?;
-            Ok(Json(AuthResponseBody::new(
-                token,
-                refresh_token,
-                user.username,
-            )))
-        }
-        Ok(false) => Err(AppError::unauthorized()),
-        Err(_) => Err(AppError::internal_error()),
-    }
+    let response = login_user(
+        &app_state.database.user_repo(),
+        &payload.username,
+        &payload.password,
+    )
+    .await?;
+    Ok(Json(response))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -51,26 +41,20 @@ pub struct RegisterPayload {
 }
 
 pub async fn register(
-    State(db): State<DB>,
+    State(app_state): State<AppState>,
     Json(payload): Json<RegisterPayload>,
-) -> Result<Json<AuthResponseBody>, AppError> {
+) -> Result<Json<AuthResponseBody>, ApiError> {
     if payload.username.is_empty() || payload.email.is_empty() || payload.password.is_empty() {
-        return Err(AppError::missign_credentials());
+        return Err(ApiError::MissingCredential);
     }
-
-    if !db.user_exist(&payload.username, &payload.email).await? {
-        let _user = db
-            .create_user(&payload.username, &payload.email, &payload.password)
-            .await?;
-    }
-
-    let token = generate_acces_token(&payload.username)?;
-    let refresh_token = generate_refresh_token(&payload.username)?;
-    Ok(Json(AuthResponseBody::new(
-        token,
-        refresh_token,
-        payload.username,
-    )))
+    let reponse = register_user(
+        &app_state.database.user_repo(),
+        &payload.username,
+        &payload.email,
+        &payload.password,
+    )
+    .await?;
+    Ok(Json(reponse))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -86,7 +70,7 @@ pub struct RefreshResponse {
 
 pub async fn refresh_token(
     Json(payload): Json<RefreshRequest>,
-) -> Result<Json<RefreshResponse>, AppError> {
+) -> Result<Json<RefreshResponse>, ApiError> {
     let refresh_token = payload.refresh_token;
     match decode::<Claims>(
         &refresh_token,
@@ -95,7 +79,7 @@ pub async fn refresh_token(
     ) {
         Ok(token_data) => {
             if token_data.claims.exp < DateTime::now().timestamp_millis() as usize {
-                return Err(AppError::token_expired());
+                return Err(ApiError::TokenExpired);
             }
 
             let new_acces_token = generate_acces_token(&token_data.claims.username)?;
@@ -106,10 +90,13 @@ pub async fn refresh_token(
                 refresh_token: new_refresh_token,
             }))
         }
-        Err(_) => Err(AppError::unauthorized()),
+        Err(err) => {
+            error!("{}", err.to_string());
+            Err(ApiError::InternalError)
+        }
     }
 }
 
-pub async fn check_auth(Extension(_token_data): Auth) -> Result<StatusCode, AppError> {
+pub async fn check_auth(Extension(_user): AuthUser) -> Result<StatusCode, ApiError> {
     Ok(StatusCode::ACCEPTED)
 }

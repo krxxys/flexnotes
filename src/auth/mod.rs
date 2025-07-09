@@ -1,31 +1,31 @@
-use crate::{
-    error::AppError,
-    models::{UserInfo, DB},
-    KEYS,
-};
+use crate::error::ApiError;
+use crate::repository::user_repo::UserRepo;
+use crate::AppState;
+use crate::{models::user::User, KEYS};
+use axum::routing::Route;
 use axum::{
     body::Body, extract::State, http::Request, middleware::Next, response::Response, Extension,
 };
-use jsonwebtoken::{decode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
+use tracing::error;
 
-pub type Auth = Extension<Arc<TokenData<Claims>>>;
-pub type AuthUser = Extension<Arc<UserInfo>>;
+pub type AuthUser = Extension<Arc<User>>;
 
 pub async fn auth_middleware(
-    State(db): State<DB>,
+    State(app_state): State<AppState>,
     req: Request<Body>,
     next: Next,
-) -> Result<Response, AppError> {
+) -> Result<Response, ApiError> {
     let headers = req.headers();
     let token = headers
         .get("Authorization")
         .and_then(|header| header.to_str().ok())
-        .ok_or(AppError::unauthorized())?;
+        .ok_or(ApiError::Unathorized)?;
 
     let token = token.trim_start_matches("Bearer ");
     let key = &KEYS.decoding;
@@ -35,7 +35,11 @@ pub async fn auth_middleware(
         Ok(token_data) => {
             println!("Authenicated user: {}", token_data.claims.username);
 
-            let user = db.get_user(&token_data.claims.username).await?;
+            let user = app_state
+                .database
+                .user_repo()
+                .get_user(&token_data.claims.username)
+                .await?;
             let mut req = req;
             req.extensions_mut().insert(Arc::new(token_data));
             req.extensions_mut().insert(Arc::new(user));
@@ -44,7 +48,7 @@ pub async fn auth_middleware(
         }
         Err(err) => {
             println!("Error {}", err);
-            Err(AppError::unauthorized())
+            Err(ApiError::InternalError)
         }
     }
 }
@@ -89,7 +93,7 @@ impl AuthResponseBody {
     }
 }
 
-pub fn generate_acces_token(username: &str) -> Result<String, AppError> {
+pub fn generate_acces_token(username: &str) -> Result<String, ApiError> {
     let expiration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -103,12 +107,15 @@ pub fn generate_acces_token(username: &str) -> Result<String, AppError> {
     };
 
     let token = jsonwebtoken::encode(&Header::new(Algorithm::HS256), &claims, &KEYS.encoding)
-        .map_err(|_err| AppError::internal_error())?;
+        .map_err(|err| {
+            error!("{}", err.to_string());
+            ApiError::InternalError
+        })?;
 
     Ok(token)
 }
 
-pub fn generate_refresh_token(username: &str) -> Result<String, AppError> {
+pub fn generate_refresh_token(username: &str) -> Result<String, ApiError> {
     let expiration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -122,7 +129,10 @@ pub fn generate_refresh_token(username: &str) -> Result<String, AppError> {
     };
 
     let token = jsonwebtoken::encode(&Header::new(Algorithm::HS256), &claims, &KEYS.encoding)
-        .map_err(|_err| AppError::internal_error())?;
+        .map_err(|err| {
+            error!("{}", err.to_string());
+            ApiError::InternalError
+        })?;
 
     Ok(token)
 }

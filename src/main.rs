@@ -1,25 +1,25 @@
-use crate::{error::AppError, models::DB};
+use crate::logger::{logger_middleware, LoggerState};
 use auth::{auth_middleware, Keys};
 use axum::{
-    extract::State,
-    http::{header, HeaderValue, Method, StatusCode},
+    http::{header, HeaderValue, Method},
     middleware,
-    routing::{delete, get, patch, post},
+    routing::{get, patch, post},
     Router,
 };
+use database::Database;
 use dotenv::dotenv;
-use logger::logger_middleware;
-use models::{DatabaseModel, LogMessage, NoteInfo, UserInfo};
-use mongodb::Client;
 use std::sync::{Arc, LazyLock};
 use tower_http::cors::CorsLayer;
-use tracing_subscriber::fmt;
+use tracing::info;
 
 mod auth;
+mod database;
 mod error;
 mod logger;
 mod models;
+mod repository;
 mod routes;
+mod services;
 
 static KEYS: LazyLock<Keys> = LazyLock::new(|| {
     let secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
@@ -29,40 +29,34 @@ static KEYS: LazyLock<Keys> = LazyLock::new(|| {
 static MONGO_URL: LazyLock<String> =
     LazyLock::new(|| std::env::var("DB_URL").expect("DB_URL must be set"));
 
-pub async fn setup_database() -> Arc<DatabaseModel> {
-    let mongo_client = Client::with_uri_str(MONGO_URL.clone())
-        .await
-        .expect("Failed to connect to the mongodb server");
+#[derive(Clone)]
+pub struct AppState {
+    pub database: Arc<Database>,
+    pub logger: Arc<LoggerState>,
+}
 
-    let users_collection = mongo_client
-        .database("flexnote")
-        .collection::<UserInfo>("users");
-
-    let notes_collection = mongo_client
-        .database("flexnote")
-        .collection::<NoteInfo>("notes");
-
-    let logs_collection = mongo_client
-        .database("flexnote")
-        .collection::<LogMessage>("logs");
-
-    Arc::new(DatabaseModel {
-        notes: notes_collection,
-        users: users_collection,
-        logs: logs_collection,
-        client: Arc::new(mongo_client),
-    })
+impl AppState {
+    pub async fn new() -> Self {
+        let db_state = Arc::new(Database::new().await);
+        Self {
+            database: db_state.clone(),
+            logger: Arc::new(LoggerState::new(
+                "./logs/".to_string(),
+                db_state.logs_repo(),
+            )),
+        }
+    }
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
 
-    fmt::fmt().pretty().init();
-
-    let database = setup_database().await;
+    let app_state = AppState::new().await;
 
     let port: String = std::env::var("BACKEND_PORT").unwrap_or("3001".to_string());
+
+    info!("Server is starting");
 
     let cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
@@ -77,22 +71,39 @@ async fn main() {
         .route(
             "/check",
             get(routes::auth::check_auth).layer(middleware::from_fn_with_state(
-                database.clone(),
+                app_state.clone(),
                 auth_middleware,
             )),
-        );
+        )
+        .layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            logger_middleware,
+        ));
 
-    let todo_nested_route = Router::new()
+    let todo_list_route = Router::new()
         .route(
-            "/id/{id}/todos/{todo_id}",
-            delete(routes::todos::delete_todo_by_id),
+            "/",
+            post(routes::todos::create_todo_list).get(routes::todos::get_all_todo_lists),
+        )
+        .route("/id", get(routes::todos::get_all_todos_by_id))
+        .route(
+            "/id/{todo_list_id}",
+            patch(routes::todos::rename_todo_list)
+                .delete(routes::todos::delete_todo_list)
+                .post(routes::todos::create_todo),
         )
         .route(
-            "/id/{id}/todos/{todo_id}",
-            patch(routes::todos::update_todo_by_id),
+            "/id/{todo_list_id}/todo/id/{todo_id}",
+            patch(routes::todos::modify_todo).delete(routes::todos::delete_todo),
         )
-        .route("/id/{id}/todos", post(routes::todos::create_todo))
-        .route("/id/{id}/todos", get(routes::todos::get_todos_by_note_id));
+        .layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            auth_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            logger_middleware,
+        ));
 
     let note_routes = Router::new()
         .route("/create", post(routes::notes::create_note))
@@ -103,24 +114,32 @@ async fn main() {
                 .patch(routes::notes::update_note_by_id)
                 .delete(routes::notes::delete_note),
         )
-        .merge(todo_nested_route)
+        .route(
+            "/id/{id}/pin/{todo_list_id}",
+            patch(routes::notes::pin_todo_list).delete(routes::notes::unpin_todo_list),
+        )
         .layer(middleware::from_fn_with_state(
-            database.clone(),
+            app_state.clone(),
             auth_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            logger_middleware,
         ));
 
     let app = Router::new()
         .nest("/auth", auth_routes)
         .nest("/notes", note_routes)
-        .with_state(database.clone())
-        .layer(middleware::from_fn_with_state(
-            database.clone(),
-            logger_middleware,
-        ))
+        .nest("/todos", todo_list_route)
+        .with_state(app_state.clone())
         .layer(cors);
 
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
-        .await
-        .expect(format!("Failed to listen on port: {}", port).as_str());
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
+    info!("Server listen on 0.0.0.0:{}", port);
     axum::serve(listener, app).await.unwrap();
+
+    //enforce to lazy drop of file logger state idk if this is good aproach but works...
+    app_state.logger.file_logger.flush();
+
+    Ok(())
 }
